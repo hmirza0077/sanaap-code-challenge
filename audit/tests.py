@@ -23,8 +23,8 @@ class AuditLogTests(APITestCase):
         )
 
     def tearDown(self):
-        # remove test files from MinIO
-        for document in Document.objects.all():
+        # remove test files from MinIO (soft deleted documents too)
+        for document in Document.all_objects.all():
             if document.file:
                 document.file.delete(save=False)
 

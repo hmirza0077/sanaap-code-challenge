@@ -145,8 +145,9 @@ CHANNEL_LAYERS = {
 MINIO_ENDPOINT = env("MINIO_ENDPOINT", cast=str)
 MINIO_EXTERNAL_ENDPOINT = env("MINIO_EXTERNAL_ENDPOINT", cast=str)
 MINIO_EXTERNAL_ENDPOINT_USE_HTTPS = env("MINIO_EXTERNAL_ENDPOINT_USE_HTTPS", cast=bool)
-MINIO_ACCESS_KEY = env("MINIO_ACCESS_KEY", cast=str)
-MINIO_SECRET_KEY = env("MINIO_SECRET_KEY", cast=str)
+# Django connects with the same admin user that the minio container is created with
+MINIO_ACCESS_KEY = env("MINIO_ROOT_USER", cast=str)
+MINIO_SECRET_KEY = env("MINIO_ROOT_PASSWORD", cast=str)
 MINIO_USE_HTTPS = env("MINIO_USE_HTTPS", cast=bool)
 MINIO_URL_EXPIRY_HOURS = timedelta(hours=1)
 MINIO_CONSISTENCY_CHECK_ON_START = env("MINIO_CONSISTENCY_CHECK_ON_START", cast=bool)

@@ -4,10 +4,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # from rest_framework.authtoken.views import obtain_auth_token  # Token auth (old)
 
-from .views import MeView, UserViewSet
+from .views import UserViewSet
 
 router = DefaultRouter()
-router.register("users", UserViewSet, basename="user")
+router.register("users", UserViewSet, basename="user")  # also /users/me/
 
 urlpatterns = [
     # --- JWT auth (current) ---
@@ -15,5 +15,4 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),  # refresh -> new access
     # --- Token auth (old) - uncomment this and comment the two lines above to switch back ---
     # path("login/", obtain_auth_token, name="login"),  # username + password -> token
-    path("me/", MeView.as_view(), name="me"),
 ] + router.urls
