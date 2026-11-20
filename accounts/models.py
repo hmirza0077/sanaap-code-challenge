@@ -7,6 +7,11 @@ from common.models import SoftDeleteManager, SoftDeleteModel
 class UserManager(SoftDeleteManager, auth_models.UserManager):
     """Django's UserManager (create_user, ...) without deleted users, so they cannot log in."""
 
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        # a superuser (createsuperuser) gets the admin role, so the role field shows the real access
+        extra_fields.setdefault("role", User.Role.ADMIN)
+        return super().create_superuser(username, email, password, **extra_fields)
+
 
 class User(auth_models.AbstractUser, SoftDeleteModel):
     class Role(models.TextChoices):

@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from accounts.models import User
-from documents.models import Document
+from documents.models import Document, DocumentShare
 
 PASSWORD = "pass12345"
 
@@ -54,6 +54,15 @@ DOCUMENTS = [
     ("Logo Draft", "ali_editor", 0),
 ]
 
+# (document title, shared with) - viewers only see documents shared with them
+SHARES = [
+    ("Invoice January", "nima_viewer"),
+    ("Contract - Office Rent", "nima_viewer"),
+    ("Insurance Claim Photo 1", "zahra_viewer"),
+    ("Team Photo", "zahra_viewer"),
+    ("Receipt Taxi", "ali_editor"),  # an editor can read a document of another editor, but not change it
+]
+
 
 class Command(BaseCommand):
     help = "Fill the database with sample users and documents for manual testing."
@@ -80,11 +89,17 @@ class Command(BaseCommand):
             return
 
         now = timezone.now()
+        documents = {}
         for title, username, days_ago in DOCUMENTS:
             document = Document(title=title, uploaded_by=users[username], status=Document.Status.READY)
             document.file.save("sample.png", ContentFile(SAMPLE_PNG), save=True)
+            documents[title] = document
 
             # created_at uses auto_now_add, so we change it after saving to get different dates
             Document.objects.filter(pk=document.pk).update(created_at=now - timedelta(days=days_ago))
 
-        self.stdout.write(f"{len(DOCUMENTS)} documents created.")
+        for title, username in SHARES:
+            document = documents[title]
+            DocumentShare.objects.create(document=document, user=users[username], shared_by=document.uploaded_by)
+
+        self.stdout.write(f"{len(DOCUMENTS)} documents and {len(SHARES)} shares created.")

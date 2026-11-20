@@ -33,3 +33,24 @@ class Document(SoftDeleteModel):
 
     def __str__(self):
         return self.title
+
+
+class DocumentShare(SoftDeleteModel):
+    """The owner shares a document with a user: that user can see and download it, but cannot change it."""
+
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="shares")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="shared_documents")
+    shared_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+
+    class Meta:
+        constraints = [
+            # one active share per user and document; unshared (soft deleted) rows are kept as history
+            models.UniqueConstraint(
+                fields=["document", "user"],
+                condition=models.Q(is_deleted=False),
+                name="unique_active_document_share",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.document} -> {self.user}"

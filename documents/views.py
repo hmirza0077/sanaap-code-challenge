@@ -1,6 +1,5 @@
-import os
-
-from django.http import FileResponse
+from django.db.models import Prefetch, Q
+from django.http import HttpResponseRedirect
 from drf_spectacular.utils import extend_schema_view, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -12,16 +11,16 @@ from audit.models import AuditLog
 from audit.services import AuditLogService
 from documents import const
 from documents.filters import DocumentFilter
-from documents.models import Document
+from documents.models import Document, DocumentShare
 from documents.notifications import DocumentNotification
-from documents.serializers import DocumentSerializer
+from documents.serializers import DocumentSerializer, DocumentShareSerializer
 from documents.services import DocumentService
 
 
 @extend_schema_view(
     list=extend_schema(
         summary="List Documents",
-        description="Retrieve a list of documents",
+        description="Own documents and documents shared with you (admin: all documents)",
     ),
     create=extend_schema(
         summary="Upload Document",
@@ -33,25 +32,51 @@ from documents.services import DocumentService
     ),
     destroy=extend_schema(
         summary="Delete Document",
-        description="Soft delete: the document is hidden, but kept in the database and MinIO",
+        description="Admin only. Soft delete: the document is hidden, but kept in the database and MinIO",
     ),
     download=extend_schema(
         summary="Download Document",
-        description="Download the file of a document. Returns 409 while the file is not ready",
-        responses={200: None},
+        description="Checks access, then redirects (302) to a presigned MinIO link that expires after 60 seconds. "
+        "Returns 409 while the file is not ready",
+        responses={302: None},
     ),
     retry=extend_schema(
         summary="Retry Upload",
-        description="Send a failed upload to the background task again. "
+        description="Owner or admin: send a failed upload to the background task again. "
         "Returns 409 if the upload has not failed, 410 if the file has expired and must be uploaded again",
         request=None,
     ),
+    share=extend_schema(
+        summary="Share Document",
+        description="Owner or admin: give a user read-only access (view and download)",
+        request=DocumentShareSerializer,
+    ),
+    unshare=extend_schema(
+        summary="Unshare Document",
+        description="Owner or admin: take the read-only access back",
+        request=DocumentShareSerializer,
+    ),
 )
 class DocumentViewSet(ModelViewSet):
-    queryset = Document.objects.select_related("uploaded_by")
     serializer_class = DocumentSerializer
     permission_classes = [DocumentPermission]
     filterset_class = DocumentFilter
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):  # schema generation for Swagger has no real user
+            return Document.objects.none()
+
+        user = self.request.user
+        queryset = Document.objects.select_related("uploaded_by").prefetch_related(
+            Prefetch("shares", queryset=DocumentShare.objects.filter(user__is_deleted=False).select_related("user"))
+        )
+        if user.is_admin_role:
+            return queryset
+
+        # Own documents + documents shared with this user. Anything else returns 404,
+        # so a link to another user's document is useless even if it is shared.
+        shared_document_ids = DocumentShare.objects.filter(user=user).values("document_id")
+        return queryset.filter(Q(uploaded_by=user) | Q(id__in=shared_document_ids))
 
     def perform_create(self, serializer):
         # the file is stored by the background task, not inside the request
@@ -83,14 +108,13 @@ class DocumentViewSet(ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Secure download: only authenticated users with read access get the file."""
+        """Only users who can see the document get a (short-lived) MinIO link."""
         instance = self.get_object()
         if instance.status != Document.Status.READY:
             return Response({"detail": "File is not ready."}, status=status.HTTP_409_CONFLICT)
 
         AuditLogService.log_action(request.user, AuditLog.Action.DOWNLOAD, instance)
-        filename = os.path.basename(instance.file.name)
-        return FileResponse(instance.file.open("rb"), as_attachment=True, filename=filename)
+        return HttpResponseRedirect(DocumentService(instance).get_download_url())
 
     @action(detail=True, methods=["post"])
     def retry(self, request, pk=None):
@@ -107,3 +131,27 @@ class DocumentViewSet(ModelViewSet):
         AuditLogService.log_action(request.user, AuditLog.Action.UPDATE, instance)
         DocumentNotification.send_document_event(const.DOCUMENT_EVENT_UPDATED, instance)
         return Response(self.get_serializer(instance).data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"])
+    def share(self, request, pk=None):
+        instance = self.get_object()
+        serializer = DocumentShareSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["username"]
+        if user == instance.uploaded_by:
+            return Response({"detail": "The owner already has access."}, status=status.HTTP_400_BAD_REQUEST)
+
+        DocumentService(instance).share(user, shared_by=request.user)
+        AuditLogService.log_action(request.user, AuditLog.Action.SHARE, instance)
+        # load again, so "shared_with" in the response includes the new user
+        return Response(self.get_serializer(self.get_object()).data)
+
+    @action(detail=True, methods=["post"])
+    def unshare(self, request, pk=None):
+        instance = self.get_object()
+        serializer = DocumentShareSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        DocumentService(instance).unshare(serializer.validated_data["username"], unshared_by=request.user)
+        AuditLogService.log_action(request.user, AuditLog.Action.UNSHARE, instance)
+        return Response(self.get_serializer(self.get_object()).data)

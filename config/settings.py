@@ -152,6 +152,7 @@ MINIO_USE_HTTPS = env("MINIO_USE_HTTPS", cast=bool)
 MINIO_URL_EXPIRY_HOURS = timedelta(hours=1)
 MINIO_CONSISTENCY_CHECK_ON_START = env("MINIO_CONSISTENCY_CHECK_ON_START", cast=bool)
 MINIO_APP_PRIVATE_BUCKET = env("MINIO_APP_PRIVATE_BUCKET", cast=str)
+MINIO_REGION = "us-east-1"  # MinIO's default region; needed to sign download links without a network call
 MINIO_PRIVATE_BUCKETS = [
     MINIO_APP_PRIVATE_BUCKET,
 ]

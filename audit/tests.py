@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from audit.models import AuditLog
-from documents.models import Document
+from documents.models import Document, DocumentShare
 
 
 def make_image():
@@ -21,6 +21,8 @@ class AuditLogTests(APITestCase):
         self.document = Document.objects.create(
             title="contract", file=make_image(), uploaded_by=self.admin, status=Document.Status.READY
         )
+        # the viewer can only see documents shared with them
+        DocumentShare.objects.create(document=self.document, user=self.viewer, shared_by=self.admin)
 
     def tearDown(self):
         # remove test files from MinIO (soft deleted documents too)
@@ -67,6 +69,14 @@ class AuditLogTests(APITestCase):
         self.assertEqual(log.action, AuditLog.Action.DELETE)
         self.assertEqual(log.document_id, self.document.id)
         self.assertEqual(log.document_title, "contract")
+
+    def test_share_and_unshare_are_logged(self):
+        self.client.force_authenticate(self.admin)
+        self.client.post(reverse("document-unshare", args=[self.document.id]), {"username": "viewer"})
+        self.assertEqual(self.last_log().action, AuditLog.Action.UNSHARE)
+
+        self.client.post(reverse("document-share", args=[self.document.id]), {"username": "viewer"})
+        self.assertEqual(self.last_log().action, AuditLog.Action.SHARE)
 
     def test_filter_by_action(self):
         self.client.force_authenticate(self.viewer)

@@ -76,6 +76,9 @@ services:
     env_file:
       - app.env
     ports:
+      # MinIO API: clients download with presigned links. The bucket is private,
+      # so a request without a valid, unexpired signature gets "Access Denied"
+      - "9000:9000"
       - "127.0.0.1:9001:9001" # MinIO web console
     volumes:
       - minio_data:/data

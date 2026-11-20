@@ -11,6 +11,8 @@ class AuditLog(models.Model):
         CREATE = "create", "Create"
         UPDATE = "update", "Update"
         DELETE = "delete", "Delete"
+        SHARE = "share", "Share"
+        UNSHARE = "unshare", "Unshare"
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=10, choices=Action.choices)
